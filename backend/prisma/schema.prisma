@@ -1,0 +1,123 @@
+// Prisma Schema — Student DevOps Hub
+// Data model for user profiles, projects, pipeline runs, test reports, and deployments.
+// Auth is handled by Supabase Auth; the User.id is the Supabase Auth user UUID.
+// Prisma migrations use the DIRECT connection string (DIRECT_URL) when available,
+// falling back to DATABASE_URL (session pooler) for runtime queries.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id         String    @id @default(uuid())
+  email      String    @unique
+  name       String?
+  avatar_url String?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  projects   Project[]
+
+  @@index([email])
+}
+
+model Project {
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  repo_url      String?
+  repo_owner    String?
+  repo_name     String?
+  default_branch String       @default("main")
+  project_type  String?                 // e.g. web, api, library, ml, cli
+  language      String?
+  framework     String?
+  visibility    String        @default("private") // private | public
+  status        String        @default("active")  // active | archived | paused
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+
+  owner_id      String
+  owner         User          @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+
+  pipelines     PipelineRun[]
+  test_reports  TestReport[]
+  deployments   Deployment[]
+
+  @@index([owner_id])
+  @@index([repo_url])
+  @@index([project_type])
+}
+
+model PipelineRun {
+  id            String   @id @default(uuid())
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  github_run_id String?  @unique                 // GitHub Actions run id
+  ref           String?                         // git ref / branch
+  commit_sha    String?
+  commit_msg    String?
+  status        String  @default("pending")   // pending | running | success | failed | cancelled
+  trigger       String  @default("manual")    // manual | push | schedule | webhook
+  started_at    DateTime?
+  finished_at   DateTime?
+  duration_ms   Int?
+  logs_url      String?
+  workflow_url  String?
+  created_at    DateTime @default(now())
+
+  test_reports  TestReport[]
+  deployments   Deployment[]
+
+  @@index([project_id])
+  @@index([status])
+  @@index([github_run_id])
+}
+
+model TestReport {
+  id             String   @id @default(uuid())
+  pipeline_id    String
+  pipeline       PipelineRun @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  project_id     String
+  project        Project     @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  name           String
+  total          Int      @default(0)
+  passed         Int      @default(0)
+  failed         Int      @default(0)
+  skipped        Int      @default(0)
+  duration_ms    Int?
+  status         String   @default("pending") // pending | passed | failed | running
+  report_url     String?
+  report_metadata Json?
+  created_at     DateTime @default(now())
+
+  @@index([pipeline_id])
+  @@index([project_id])
+}
+
+model Deployment {
+  id            String   @id @default(uuid())
+  pipeline_id   String?
+  project_id    String
+  project       Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  pipeline      PipelineRun? @relation(fields: [pipeline_id], references: [id], onDelete: SetNull)
+  environment   String   @default("staging") // development | staging | production
+  status        String   @default("pending") // pending | in_progress | success | failed | rolled_back
+  ref           String?
+  commit_sha    String?
+  deployed_by   String?
+  url           String?
+  started_at    DateTime?
+  finished_at   DateTime?
+  created_at    DateTime @default(now())
+
+  @@index([project_id])
+  @@index([environment])
+  @@index([status])
+}
